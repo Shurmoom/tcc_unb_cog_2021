@@ -1,3 +1,62 @@
+#include <msp430.h>
+
+#include "configs.h" // contém MQ-135
+#include "DHT22.h"
+#include "LCD.h"
+#include "serial.h"
+#include "nrf_def.h"
+
+volatile unsigned char modo = 2, meio_seg = 0, vent1_estado = 0, vent2_estado = 0, lamp_estado = 0, umid_estado = 0, peltier_estado = 0;
+
+void ventilador_config(void){ // porta P4.0 como OUTPUT
+    P4SEL &= ~BIT0;
+    P4DIR |= BIT0;
+    P4OUT &= ~BIT0;
+
+    P3SEL &= ~BIT7;
+    P3DIR |= BIT7;
+    P3OUT &= ~BIT7;
+}
+
+void lampada_config(void){
+    P8SEL &= ~BIT2;
+    P8REN |= BIT2;
+    P8DIR |= BIT2;
+    P8OUT &= ~BIT2;
+}
+
+void peltier_config(void){
+    P8SEL &= ~BIT1;
+    P8DIR |= BIT1;
+    P8OUT &= ~BIT1;
+}
+
+inline void ventilador1_on(void) {   P4OUT |= BIT0;  }
+inline void ventilador1_off(void) {  P4OUT &= ~BIT0; }
+inline void ventilador2_on(void) {   P3OUT |= BIT7;  }
+inline void ventilador2_off(void) {  P3OUT &= ~BIT7; }
+
+inline void lamp_on(void){
+    P8OUT |= BIT2;
+    meio_seg = 0;
+}
+inline void lamp_off(void){
+    P8OUT &= ~BIT2;
+    meio_seg = 0;
+}
+
+inline void peltier_on(void) {   P8OUT |= BIT1;  }
+inline void peltier_off(void) {  P8OUT &= ~BIT1; }
+
+void lcd_titulo(unsigned int gasmax,unsigned int tmin,unsigned int tmax,unsigned int umidmin,unsigned int umidmax){
+    lcd_str("     ");
+    lcd_cursor(1,7); lcd_str("  "); lcd_char(0xDF); lcd_str("C ");
+    lcd_cursor(1,12); lcd_str("  %UR");
+    lcd_cursor(2,1); lcd_dec16(gasmax); lcd_cursor(2,6);
+    lcd_dec16(tmin); lcd_cursor(2,8); lcd_char('-'); lcd_dec16(tmax); lcd_char(' ');
+    lcd_dec16(umidmin); lcd_cursor(2,14); lcd_char('-'); lcd_dec16(umidmax);
+}
+
 int main(void){
     WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
 
@@ -18,7 +77,7 @@ int main(void){
     lampada_config();       // P8.2 como output
     peltier_config();
 
-    unsigned int tmin = 25, tmax = 30, umidmin = 50, umidmax = 90, gasmax = 1000;
+    unsigned int tmin = 22, tmax = 26, umidmin = 50, umidmax = 90, gasmax = 800;
 
     lcd_titulo(gasmax,tmin,tmax,umidmin,umidmax);
 
@@ -29,28 +88,27 @@ int main(void){
     ser_char(0xD); // corrigir bug inicial no primeiro envio (serial)
 
 
-    timer_medida();         // para comeÃ§ar medindo --> testes
+    timer_medida();         // para começar medindo --> testes
     __enable_interrupt();
 
     volatile char c;
 
-    // NRF
+    //====== TESTE NRF ======
+    unsigned char payload[27]="25,600 > 60,799 # 545,666 #";
+    spi_config();
     unsigned char nome[5]="COGML";
-    if(radio == 1){
-        spi_config();
-        nrf_config();
-        nrf_wr_addr(NRF_TX_ADDR, nome);
-        nrf_wr_addr(NRF_RX_ADDR_P0, nome);
-        nrf_flush_tx();
-        nrf_flush_rx();
-        nrf_modo_tx();
-        nrf_wr_reg(NRF_STATUS,RX_DR|TX_DS|MAX_RT);  //RX_DR=0, TX_DS=0; MAX_RT=0
-        nrf_power_up();
-    }
+    nrf_config();
+    nrf_wr_addr(NRF_TX_ADDR, nome);
+    nrf_wr_addr(NRF_RX_ADDR_P0, nome);
+    nrf_flush_tx();
+    nrf_flush_rx();
+    nrf_modo_tx();
+    nrf_wr_reg(NRF_STATUS,RX_DR|TX_DS|MAX_RT);  //RX_DR=0, TX_DS=0; MAX_RT=0
+    nrf_power_up();
 
     while(1){
         c = UCA1RXBUF;
-        if(c == 'x' && modo == 0){ // modo Ocioso (aguarda nova leitura OU comando)
+        if(c == 'x' && modo == 0){ // modo Ocioso (aguardando nova leitura ou 'x')
             modo = 1;
             __disable_interrupt();
             while((UCA1IFG & UCRXIFG) == 0); // esperar rx
@@ -123,15 +181,15 @@ int main(void){
         }
 
         if(modo == 1){ // modo Entrada de Dados
-            ser_str("Insira os valores mÃ­nimo e mÃ¡ximo de temperatura (C): ");
+            ser_str("Insira os valores mínimo e máximo de temperatura (C): ");
             ser_globalint2(&tmin, &tmax);
             ser_undec16(tmin); ser_char(' '); ser_undec16(tmax); ser_nlin();
 
-            ser_str("Insira os valores mÃ­nimo e mÃ¡ximo de umidade (%): ");
+            ser_str("Insira os valores mínimo e máximo de umidade (%): ");
             ser_globalint2(&umidmin, &umidmax);
             ser_undec16(umidmin); ser_char(' '); ser_undec16(umidmax); ser_nlin();
 
-            ser_str("Insira o valor mÃ¡ximo de CO2 (PPM): ");
+            ser_str("Insira o valor máximo de CO2 (PPM): ");
             ser_globalint2(&gasmax, &gasmax);
             ser_undec16(gasmax); ser_nlin();
 
@@ -149,7 +207,7 @@ int main(void){
             //MQ-135
             mq135_ler(&gas[i]);
 
-            lcd_cursor(1,1); lcd_dec16((int)gas[i]); lcd_str("P ");
+            lcd_cursor(1,1); lcd_dec16((int)gas[i]); lcd_char('P');
             lcd_cursor(1,7); lcd_dec16((int)temp[i]); lcd_cursor(1,9); lcd_char(0xDF); lcd_str("C ");
             lcd_cursor(1,12); lcd_dec16((int)umid[i]);lcd_cursor(1,14); lcd_str("%UR");
             lcd_cursor(2,1); lcd_dec16(gasmax); lcd_cursor(2,6);
@@ -165,38 +223,12 @@ int main(void){
                 ser_float(umidm); ser_char(' '); ser_check(umidm, umidmin, umidmax); ser_char(' ');
                 ser_float(gasm);  ser_char(' '); ser_check(gasm, 0, gasmax); ser_nlin();
 
-                // NRF
-                if(radio == 1){
-                    str_payload(tempm, umidm, gasm);
-                    nrf_wr_reg(NRF_STATUS,RX_DR|TX_DS|MAX_RT); // limpa regs
-                    nrf_wr_payload(p,27);
-                }
-
-                // Controle
-                if(controle == 1){
-                    if((gasm > gasmax) || (umidm > umidmax)){
-                        desliga_resto('v');
-                        if(vent1_estado == 0) { vent1_estado = 1; ventilador1_on(); }
-                    }
-                    /*else if(umidm < umidmin){
-                        desliga_resto('u');
-                        if(umid_estado == 0) { umid_estado = 1; umid_on(); }
-                    }*/
-                    else if(tempm < tmin){
-                        desliga_resto('l');
-                        if(lamp_estado == 0) { lamp_estado = 1; lamp_on(); }
-                    }
-                    /*else if(tempm > tmax){
-                        desliga_resto('p');
-                        if(peltier_estado == 0) { peltier_estado = 1; peltier_on(); }
-                    }*/
-                    else{
-                        desliga_resto('x'); // desliga tudo que estiver em 1
-                    }
-                }
+                //====== TESTE NRF ======
+                nrf_wr_reg(NRF_STATUS,RX_DR|TX_DS|MAX_RT); // limpa regs
+                nrf_wr_payload(payload,27);
             }
-            else if(esp == 0) { ser_str("Coletando dados para mÃ©dia mÃ³vel"); ser_nlin(); }
-            else if(esp == 1) { ser_str("==== MÃ©dias de Temperatura, Umidade e CO2 ===="); ser_nlin(); }
+            else if(esp == 0) { ser_str("Coletando dados para média móvel"); ser_nlin(); }
+            else if(esp == 1) { ser_str("==== Médias de Temperatura, Umidade e CO2 ===="); ser_nlin(); }
 
             i += 1;
             if(i > 2) i = 0;

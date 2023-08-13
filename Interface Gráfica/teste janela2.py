@@ -1,7 +1,6 @@
 import tkinter as tk
 import matplotlib.pyplot as plt
 import serial
-from datetime import datetime
 
 def achar_inis(*lin):
     vet = [0,0]
@@ -17,7 +16,7 @@ def achar_inis(*lin):
     return vet
 
 def ler_dado(ini, *lin):
-    if lin[ini+1] == 44:    # ascii para vÃ­rgula
+    if lin[ini+1] == 44:    # ascii para vírgula
         dado = int(lin[ini])
         ini += - 1
     elif lin[ini+2] == 44:
@@ -32,20 +31,15 @@ def ler_dado(ini, *lin):
     dado += aux
     return dado
 
-# ==== FunÃ§Ãµes TKINTER =====
+# ==== Funções TKINTER =====
 
 def leitura():
     ser = serial.Serial('COM4', 115200, serial.FIVEBITS, serial.PARITY_NONE,
                         serial.STOPBITS_ONE, timeout = 2.5)
     line = ser.readline()
-    global i, temp_med, umid_med, co2_med, temp, umid, co2, window, parar, button
-    if button[2]['state'] == 'normal':
-        for b in range(2,5):
-            button[b]['state'] = 'disabled'
+    global i, temp_med, umid_med, co2_med, temp, umid, co2, window, parar
     if parar == 1:
         parar = 0
-        for b in range(2,5):
-            button[b]['state'] = 'normal'
         return 0
     if line != b'\r':
         vet = []
@@ -62,34 +56,12 @@ def leitura():
             umid.append(ler_dado(vet_inis[0], *vet))
             co2.append(ler_dado(vet_inis[1], *vet))
 
-            mt = len(temp)-1
-            lin_dados = f"{temp[mt]} {umid[mt]} {co2[mt]}\n"
-            txt = open(dt_string,"a+")
-            txt.write(lin_dados)
-            txt.close()
-            
             temp_med = sum(temp)/len(temp)
             umid_med = sum(umid)/len(umid)
             co2_med = sum(co2)/len(co2)
 
-            tempo_h = (i*2.5)/3600
-            tempo_m = (tempo_h%1)*60
-            tempo_s = (tempo_m%1)*60
-            tempo_h = int(tempo_h)
-            tempo_m = int(tempo_m)
-            tempo_s = int(tempo_s)
-
             global terminal
-            terminal['text'] = f"NÃºmero de medidas: {i+1}\n"
-            terminal['text'] += f"Tempo: {tempo_h}:{tempo_m}:{tempo_s}\n\n"
-
-            terminal['text'] += f"Temperatura: {temp[i]:6.1f} ÂºC\n"
-            terminal['text'] += f"Umidade: {umid[i]:12.1f} %\n"
-            terminal['text'] += f"CO2: {co2[i]:18.1f} PPM\n\n"
-            
-            terminal['text'] += f"MÃ©dia de temperatura: {temp_med:6.1f} ÂºC\n"
-            terminal['text'] += f"MÃ©dia de umidade: {umid_med:12.1f} %\n"
-            terminal['text'] += f"MÃ©dia de CO2: {co2_med:18.1f} PPM"
+            terminal['text'] = f"Medida número {i+1}\n\nMédia de temperatura: {temp_med:6.1f} ºC\nMédia de umidade: {umid_med:12.1f} %\nMédia de CO2: {co2_med:18.1f} PPM"
 
             i += 1
 
@@ -106,7 +78,7 @@ def graf():
     plt.plot(tempo, temp, 'bo', ms = 2)
     plt.plot([tempo[0],tempo[len(tempo)-1]], [temp_med, temp_med], 'b--')
     plt.xlabel('tempo [s]')
-    plt.ylabel('temperatura [ÂºC]')
+    plt.ylabel('temperatura [ºC]')
     plt.title('Temperatura')
 
     plt.figure()
@@ -121,32 +93,32 @@ def graf():
     plt.plot([tempo[0],tempo[len(tempo)-1]], [co2_med, co2_med], 'r--')
     plt.xlabel('tempo [s]')
     plt.ylabel('CO2 [PPM]')
-    plt.title('NÃ­vel de CO2')
+    plt.title('Nível de CO2')
     
     plt.show()
 
 def manda_x():
     ser = serial.Serial('COM4', 115200, serial.FIVEBITS, serial.PARITY_NONE,
                         serial.STOPBITS_ONE, timeout = 2.5)
-    global i
     if i>0:
-        ser.write(b'x\n\r')
+        ser.write(b'x')
+        ser.write(b'\n')
         line = ser.readline()
         print(line)
-    line = entry[0].get() + ' ' + entry[1].get() + "\n\r"
-    ser.write(b'{line}')
-    line = ser.readline()
-    print(line)
-    line = entry[2].get() + ' ' + entry[3].get() + "\n\r"
-    ser.write(b'{line}')
-    line = ser.readline()
-    print(line)
-    line = entry[4].get() + "\n\r"
-    ser.write(b'{line}')
-    line = ser.readline()
-    print(line)
+    line = b''
     while(1):
-        if b'#' or b'>' or b'<' in line:
+        if b'PPM' not in line:
+            ser.write(b'1')
+            ser.write(b'2')
+            ser.write(b' ')
+            ser.write(b'3')
+            ser.write(b'4')
+            ser.write(b'\n')
+        else:
+            ser.write(b'5')
+            ser.write(b'6')
+            ser.write(b'7')
+            ser.write(b'\n')
             line = ser.readline()
             print(line)
             break
@@ -154,18 +126,13 @@ def manda_x():
         print(line)
     ser.close()
 
-def manda_xx():
-    #for i in range(len(entry)):
-    #    print(entry[i].get())
-    line = entry[0].get() + ' ' + entry[1].get() + "\n\r"
-    print(line)
-
 def ler_term():
     ser = serial.Serial('COM4', 115200, serial.FIVEBITS, serial.PARITY_NONE,
                         serial.STOPBITS_ONE, timeout = 2.5)
 
     line = ser.readline()
     print(line)
+    
     ser.close()
 
 def stop():
@@ -173,9 +140,6 @@ def stop():
     parar = 1
 
 # ==== MAIN ====
-
-now = datetime.now()
-dt_string = now.strftime("COG_%d-%m-%Y_%H-%M-%S")+".txt"
 
 temp, umid, co2 = [], [], []
 temp_med, umid_med, co2_med = 0.0, 0.0, 0.0
